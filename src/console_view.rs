@@ -1,63 +1,91 @@
 use std::io::Write;
+use std::collections::HashMap;
 
 use crossterm::{cursor, execute, queue, terminal, style, event};
 use crossterm::event::{Event, KeyCode};
 use crossterm::style::Stylize;
 
-pub struct ConsoleView {
+use crate::Pin;
 
+pub struct ConsoleView {
+    width: u16,
+    height: u16,
+    pin_keys: [char; 10],
 }
 
 impl ConsoleView {
+
+    pub fn new() -> Self {
+        let (width, height) = terminal::size().unwrap();
+        let pin_keys = [ 'q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p', ];
+        Self { width, height, pin_keys }
+    }
+
     pub fn update(&self) -> crate::Result<()> {
-        let (width, height) = terminal::size()?;
         let mut stdout = std::io::stdout();
         queue!(stdout,
             cursor::Hide,
             terminal::Clear(terminal::ClearType::All),
-            cursor::MoveTo((width / 2) - 10, 1), style::Print("マスター　マインド".yellow()),
+            cursor::MoveTo((self.width / 2) - 10, 1), style::Print("マスター　マインド".yellow()),
         )?;
         for i in 1..=10 {
             queue!(stdout,
-                cursor::MoveTo((width / 2) - 15, 13 - i), style::Print(format!("{:>2}: {}|", i, "|    ".repeat(4))),
+                cursor::MoveTo((self.width / 2) - 15, 13 - i), style::Print(format!("{:>2}: {}|", i, "|    ".repeat(4))),
             )?;
         }
         queue!(stdout,
-            cursor::MoveTo((width / 2) - 8, 14), style::Print("1    2    3    4"),
-            cursor::MoveTo((width / 2) - 15 - 24, 17), style::Print("ピンの位置を選んでください (1-4)"),
-            cursor::MoveTo((width / 2) - 15 - 24, 19), style::Print("ピンを選んでください    "),
-                style::Print(" q:"), style::Print("▲".red()),
-                style::Print(" w:"), style::Print("▲".blue()),
-                style::Print(" e:"), style::Print("▲".green()),
-                style::Print(" r:"), style::Print("▲".yellow()),
-                style::Print(" t:"), style::Print("▲".with(style::Color::Rgb { r:255, g:165, b:0 })),
-                style::Print(" y:"), style::Print("▲".with(style::Color::Rgb { r:247, g:155, b:185 })),
-            cursor::MoveTo(width - 10, height - 2), style::Print("終了: ESC  "),
-        )?;
-        queue!(stdout,
-            cursor::MoveTo(width - 10, height - 2), style::Print("終了: ESC  "),
-            cursor::MoveTo(0, height - 1),
+            cursor::MoveTo((self.width / 2) - 8, 14), style::Print("1    2    3    4"),
+            cursor::MoveTo((self.width / 2) - 15 - 24, 17), style::Print("ピンの位置を選んでください (1-4)"),
+            cursor::MoveTo((self.width / 2) - 15 - 24, 19), style::Print("ピンを選んでください    "),
+            cursor::MoveTo(self.width - 10, self.height - 2), style::Print("終了: ESC  "),
+            cursor::MoveTo(0, self.height - 1),
         )?;
         stdout.flush()?;
         
         Ok(())
     }
 
-    pub fn wait_input(&self) -> crate::Result<()> {
-        loop {
-            // Blocks until an `Event` is available
+    pub fn wait_input(&self, pins: &[&Pin] ) -> crate::Result<()> {
 
+        let mut pin_map = HashMap::new();
+        {
+            let mut stdout = std::io::stdout();
+            queue!(stdout, cursor::MoveTo((self.width / 2) - 15, 19), terminal::Clear(terminal::ClearType::UntilNewLine))?;
+            let mut key = self.pin_keys.iter();
+            for pin in pins {
+                let key_char = key.next().unwrap();
+                pin_map.insert(key_char, *pin);
+                queue!(stdout, style::Print(format!(" {}:", key_char)), style::Print("▲".with(pin.color)))?;
+
+            }
+            queue!(stdout, cursor::MoveTo(0, self.height - 1))?;
+            stdout.flush()?;
+        }
+        let pin_map = pin_map;
+
+        loop {
             let event = event::read()?;
             //println!("{:?}", event);
             match event {
                 Event::Key(key) if key.kind == event::KeyEventKind::Release => {
                     match key.code {
                         event::KeyCode::Esc => break,
-                        event::KeyCode::Char(ch) => {
-                            if '1' <= ch && ch <= '6' {
-
-                            }
+                        event::KeyCode::Char(ch) if '1' <= ch && ch <= '4' => {
+                                execute!(std::io::stdout(),
+                                    cursor::MoveTo(4, self.height - 4), terminal::Clear(terminal::ClearType::CurrentLine),
+                                    style::Print(format!("ピンの位置: {} を選択", ch)))?;
                         },
+                        event::KeyCode::Char(ch) if pin_map.contains_key(&ch) => {
+                                execute!(std::io::stdout(),
+                                    cursor::MoveTo(4, self.height - 4), terminal::Clear(terminal::ClearType::CurrentLine),
+                                    style::Print("ピン: "),
+                                    style::Print("▲".with(pin_map.get(&ch).unwrap().color)), 
+                                    style::Print(" を選択"))?;
+                        },
+                        event::KeyCode::Char(ch) => {
+                            execute!(std::io::stdout(),
+                                cursor::MoveTo(4, self.height - 4), terminal::Clear(terminal::ClearType::CurrentLine), style::Print(format!("{:?} キー じゃないよ", ch)))?;
+                        }
                         _ => (),
                     }
                 },

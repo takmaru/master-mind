@@ -95,15 +95,16 @@ struct Rule {
 pub fn start() -> Result<()> {
 
     // ルール
-    let pins = HashSet::from([ Pin::red(), Pin::green(), Pin::blue(), Pin::yellow(), Pin::pink(), Pin::orange() ]);
+    let pins = HashSet::from( [ Pin::red(), Pin::green(), Pin::blue(), Pin::yellow(), Pin::pink(), Pin::orange() ] );
     let rule = Rule { pins, answer_count: 4, try_count: 10 };
+    let pins: Vec<&Pin> = rule.pins.iter().collect();
     // 答え
     let answer = Answer::new(&rule.pins, rule.answer_count as usize)?;
     println!("answer: {:?}", answer);
 
-    let mut view = ConsoleView{};
+    let mut view = ConsoleView::new();
     view.update()?;
-    view.wait_input();
+    view.wait_input(&pins)?;
     return Ok(());
 
     // 最大回数まで
