@@ -1,7 +1,7 @@
 use std::io::Write;
 use std::collections::HashMap;
 
-use crossterm::{cursor, execute, queue, terminal, style, event};
+use crossterm::{cursor, terminal, style, event, execute, queue, };
 use crossterm::event::{Event, KeyCode};
 use crossterm::style::Stylize;
 
@@ -10,15 +10,26 @@ use crate::Pin;
 pub struct ConsoleView {
     width: u16,
     height: u16,
-    pin_keys: [char; 10],
+    pin_keys: Vec<PinKey>,
+    pins_x: u16,
+}
+
+struct PinKey {
+    pin: Pin,
+    key: char,
 }
 
 impl ConsoleView {
 
-    pub fn new() -> Self {
+    pub fn new(pins: &[&Pin]) -> Self {
         let (width, height) = terminal::size().unwrap();
-        let pin_keys = [ 'q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p', ];
-        Self { width, height, pin_keys }
+        let keys = [ 'q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p', ];
+        let pin_keys: Vec<PinKey> = pins.iter().enumerate()
+                                        .map(|(i, p)|
+                                                PinKey { pin: **p, key:keys[i]}).collect();
+        let pins_x = (width / 2) - (((pin_keys.len() * 4) + pin_keys.len() - 1) / 2) as u16;
+        execute!(std::io::stdout(), terminal::EnterAlternateScreen).unwrap();
+        Self { width, height, pin_keys, pins_x }
     }
 
     pub fn update(&self) -> crate::Result<()> {
@@ -34,9 +45,8 @@ impl ConsoleView {
             )?;
         }
         queue!(stdout,
+            cursor::MoveTo((self.width / 2) - 15 - 24, 14), style::Print("ピンの位置を選んでください"),
             cursor::MoveTo((self.width / 2) - 8, 14), style::Print("1    2    3    4"),
-            cursor::MoveTo((self.width / 2) - 15 - 24, 17), style::Print("ピンの位置を選んでください (1-4)"),
-            cursor::MoveTo((self.width / 2) - 15 - 24, 19), style::Print("ピンを選んでください    "),
             cursor::MoveTo(self.width - 10, self.height - 2), style::Print("終了: ESC  "),
             cursor::MoveTo(0, self.height - 1),
         )?;
@@ -45,23 +55,9 @@ impl ConsoleView {
         Ok(())
     }
 
-    pub fn wait_input(&self, pins: &[&Pin] ) -> crate::Result<()> {
+    pub fn wait_input(&self) -> crate::Result<()> {
 
-        let mut pin_map = HashMap::new();
-        {
-            let mut stdout = std::io::stdout();
-            queue!(stdout, cursor::MoveTo((self.width / 2) - 15, 19), terminal::Clear(terminal::ClearType::UntilNewLine))?;
-            let mut key = self.pin_keys.iter();
-            for pin in pins {
-                let key_char = key.next().unwrap();
-                pin_map.insert(key_char, *pin);
-                queue!(stdout, style::Print(format!(" {}:", key_char)), style::Print("▲".with(pin.color)))?;
-
-            }
-            queue!(stdout, cursor::MoveTo(0, self.height - 1))?;
-            stdout.flush()?;
-        }
-        let pin_map = pin_map;
+        self.print_pins(16, None);
 
         loop {
             let event = event::read()?;
@@ -69,23 +65,24 @@ impl ConsoleView {
             match event {
                 Event::Key(key) if key.kind == event::KeyEventKind::Release => {
                     match key.code {
-                        event::KeyCode::Esc => break,
-                        event::KeyCode::Char(ch) if '1' <= ch && ch <= '4' => {
+                        KeyCode::Esc => break,
+                        KeyCode::Char(ch) => {
+                            if '1' <= ch && ch <= '4' {
                                 execute!(std::io::stdout(),
                                     cursor::MoveTo(4, self.height - 4), terminal::Clear(terminal::ClearType::CurrentLine),
                                     style::Print(format!("ピンの位置: {} を選択", ch)))?;
-                        },
-                        event::KeyCode::Char(ch) if pin_map.contains_key(&ch) => {
+                            } else if let Some(pk) = self.pin_keys.iter().find(|pk| pk.key == ch) {
+                                self.print_pins(16, Some(ch));
                                 execute!(std::io::stdout(),
                                     cursor::MoveTo(4, self.height - 4), terminal::Clear(terminal::ClearType::CurrentLine),
                                     style::Print("ピン: "),
-                                    style::Print("▲".with(pin_map.get(&ch).unwrap().color)), 
+                                    style::Print("▲".with(pk.pin.color)), 
                                     style::Print(" を選択"))?;
+                            } else {
+                                execute!(std::io::stdout(),
+                                    cursor::MoveTo(4, self.height - 4), terminal::Clear(terminal::ClearType::CurrentLine), style::Print(format!("'{}' キー じゃないよ", ch)))?;
+                            }
                         },
-                        event::KeyCode::Char(ch) => {
-                            execute!(std::io::stdout(),
-                                cursor::MoveTo(4, self.height - 4), terminal::Clear(terminal::ClearType::CurrentLine), style::Print(format!("{:?} キー じゃないよ", ch)))?;
-                        }
                         _ => (),
                     }
                 },
@@ -96,4 +93,31 @@ impl ConsoleView {
         Ok(())
     }
 
+    fn print_pins(&self, row: u16, select: Option<char>) {
+        let mut stdout = std::io::stdout();
+        queue!(stdout,
+            cursor::MoveTo(self.pins_x - 26, row),
+            terminal::Clear(terminal::ClearType::CurrentLine),
+            style::Print("ピンを選択してください"),
+            cursor::MoveRight(4)).unwrap();
+        for (i, pk) in self.pin_keys.iter().enumerate() {
+            let pin_x = self.pins_x + i as u16 * 5;
+            queue!(stdout, cursor::MoveTo(self.pins_x + i as u16 * 5, row)).unwrap();
+            match select {
+                Some(s) if s == pk.key =>
+                    queue!(stdout,
+                        style::SetBackgroundColor(style::Color::DarkGrey),
+                        style::Print(format!("{}:", pk.key)), style::Print("▲".with(pk.pin.color)),
+                        style::ResetColor).unwrap(),
+                _ => queue!(stdout, style::Print(format!("{}:", pk.key)), style::Print("▲".with(pk.pin.color))).unwrap(),
+            }
+        };
+        stdout.flush();
+    }
+}
+
+impl Drop for ConsoleView {
+    fn drop(&mut self) {
+        execute!(std::io::stdout(), terminal::LeaveAlternateScreen).unwrap();
+    }
 }

@@ -14,7 +14,7 @@ mod console_view;
 use console_view::ConsoleView;
 
 //#[derive(EnumIter, Clone, PartialEq, Eq, Hash, Debug)]
-#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+#[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
 struct Pin {
     color: Color,
 }
@@ -102,9 +102,9 @@ pub fn start() -> Result<()> {
     let answer = Answer::new(&rule.pins, rule.answer_count as usize)?;
     println!("answer: {:?}", answer);
 
-    let mut view = ConsoleView::new();
+    let mut view = ConsoleView::new(&pins);
     view.update()?;
-    view.wait_input(&pins)?;
+    view.wait_input()?;
     return Ok(());
 
     // 最大回数まで
