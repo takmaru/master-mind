@@ -102,7 +102,7 @@ pub fn start() -> Result<()> {
     let answer = Answer::new(&rule.pins, rule.answer_count as usize)?;
     println!("answer: {:?}", answer);
 
-    let mut view = ConsoleView::new(&pins);
+    let mut view = ConsoleView::new(&pins, rule.answer_count, rule.try_count);
     view.update()?;
     view.wait_input()?;
     return Ok(());
