@@ -1,7 +1,6 @@
 use std::error;
 use std::fmt;
 use std::collections::HashSet;
-use std::pin;
 
 use itertools::Itertools;
 //use strum::IntoEnumIterator;
@@ -14,7 +13,7 @@ mod console_view;
 use console_view::ConsoleView;
 
 //#[derive(EnumIter, Clone, PartialEq, Eq, Hash, Debug)]
-#[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 struct Pin {
     color: Color,
 }
@@ -102,7 +101,7 @@ pub fn start() -> Result<()> {
     let answer = Answer::new(&rule.pins, rule.answer_count as usize)?;
     println!("answer: {:?}", answer);
 
-    let mut view = ConsoleView::new(&pins, rule.answer_count, rule.try_count);
+    let mut view = ConsoleView::new(&rule.pins.iter().sorted().collect::<Vec<&Pin>>(), rule.answer_count, rule.try_count);
     view.update()?;
     view.wait_input()?;
     return Ok(());
