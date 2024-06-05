@@ -19,7 +19,7 @@ pub struct ConsoleView {
     width: u16,
     height: u16,
     try_count: u32,
-    answer_count: u32,
+    answers: Vec<AnswerLine>,
     pinnum_group: SelectGroup<u32>,
     pins_group: SelectGroup<Pin>,
 }
@@ -45,7 +45,16 @@ impl ConsoleView {
 
         execute!(std::io::stdout(), terminal::EnterAlternateScreen).unwrap();
 
-        Self { width, height, try_count, answer_count, pinnum_group, pins_group }
+        Self { width, height, try_count,
+            answers: (0..try_count).into_iter()
+                .map(|y|
+                    AnswerLine {
+                        position: Position { x: (width / 2) - (((5 * answer_count) + 1) / 2) as u16 - 1,
+                                             y: (2 + try_count - y) as u16},
+                        answers: vec![None; answer_count as usize]
+                    })
+                .collect(),
+            pinnum_group, pins_group }
     }
 
     pub fn update(&self) -> crate::Result<()> {
@@ -55,10 +64,12 @@ impl ConsoleView {
             terminal::Clear(terminal::ClearType::All),
             cursor::MoveTo((self.width / 2) - 10, 1), style::Print("マスター　マインド".yellow()),
         )?;
-        for i in 1..=10 {
+        for (idx, answer) in self.answers.iter().enumerate() {
             queue!(stdout,
-                cursor::MoveTo((self.width / 2) - 15, 13 - i), style::Print(format!("{:>2}: {}|", i, "|    ".repeat(self.answer_count as usize))),
+                    cursor::MoveTo(answer.position.x - 4, answer.position.y),
+                    style::Print(format!("{:>2}: ", idx + 1)),
             )?;
+            answer.update_line();
         }
         queue!(stdout,
             cursor::MoveTo(self.pinnum_group.position.x - 34, self.pinnum_group.position.y), style::Print("ピンの位置を選択してください"),
@@ -71,9 +82,10 @@ impl ConsoleView {
         Ok(())
     }
 
-    pub fn wait_input(&mut self) -> crate::Result<Vec<Option<Pin>>> {
+    pub fn wait_input(&mut self, try_count: u32) -> crate::Result<Vec<Option<Pin>>> {
 
-        let mut input = vec![None; self.answer_count as usize];
+        //let mut input = vec![None; self.answers.len() as usize];
+        let answer = &mut self.answers[(try_count - 1) as usize];
         
         self.pinnum_group.update_line();
         self.pins_group.update_line();
@@ -87,13 +99,31 @@ impl ConsoleView {
                         KeyCode::Esc => break,
                         KeyCode::Char(ch) => {
                             if let Some(num) = self.pinnum_group.select(Some(ch)) {
-                                execute!(std::io::stdout(),
-                                    cursor::MoveTo(4, self.height - 4), terminal::Clear(terminal::ClearType::CurrentLine),
-                                    style::Print(format!("ピンの位置: {} を選択", num)))?;
+                                if let Some(pin) = self.pins_group.select_value() {
+                                    answer.input_pin((num - 1) as usize, pin);
+                                    self.pinnum_group.select(None);
+                                    self.pins_group.select(None);
+                                    execute!(std::io::stdout(),
+                                        cursor::MoveTo(4, self.height - 4), terminal::Clear(terminal::ClearType::CurrentLine),
+                                        style::Print(format!("ピン: {} を 位置: {} にセット", pin, num)))?;
+                                } else {
+                                    execute!(std::io::stdout(),
+                                        cursor::MoveTo(4, self.height - 4), terminal::Clear(terminal::ClearType::CurrentLine),
+                                        style::Print(format!("ピンの位置: {} を選択", num)))?;
+                                }
                             } else if let Some(pin) = self.pins_group.select(Some(ch)) {
-                                execute!(std::io::stdout(),
-                                    cursor::MoveTo(4, self.height - 4), terminal::Clear(terminal::ClearType::CurrentLine),
-                                    style::Print(format!("ピン: {} を選択", pin)))?;
+                                if let Some(num) = self.pinnum_group.select_value() {
+                                    answer.input_pin((num - 1) as usize, pin);
+                                    self.pinnum_group.select(None);
+                                    self.pins_group.select(None);
+                                    execute!(std::io::stdout(),
+                                        cursor::MoveTo(4, self.height - 4), terminal::Clear(terminal::ClearType::CurrentLine),
+                                        style::Print(format!("ピン: {} を 位置: {} にセット", pin, num)))?;
+                                } else {
+                                    execute!(std::io::stdout(),
+                                        cursor::MoveTo(4, self.height - 4), terminal::Clear(terminal::ClearType::CurrentLine),
+                                        style::Print(format!("ピン: {} を選択", pin)))?;
+                                }
                             } else {
                                 execute!(std::io::stdout(),
                                     cursor::MoveTo(4, self.height - 4), terminal::Clear(terminal::ClearType::CurrentLine), style::Print(format!("'{}' キー じゃないよ", ch)))?;
@@ -106,7 +136,7 @@ impl ConsoleView {
             }
         }
 
-        Ok(input)
+        Ok(Vec::new())
     }
 }
 
@@ -130,6 +160,40 @@ impl fmt::Display for KeyItem<Pin> {
 impl fmt::Display for KeyItem<u32> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "  {} ", self.item)
+    }
+}
+
+struct AnswerLine {
+    position: Position,
+    answers: Vec<Option<Pin>>,
+}
+
+impl AnswerLine {
+
+    fn update_line(&self) {
+        let mut stdout = std::io::stdout();
+        queue!(stdout,
+            cursor::MoveTo(self.position.x, self.position.y),
+            style::Print("|")).unwrap();
+        for answer in &self.answers {
+            match answer {
+                Some(pin) => queue!(stdout, style::Print(format!(" {} |", pin))).unwrap(),
+                None => queue!(stdout, style::Print("    |")).unwrap(),
+            }
+        };
+        stdout.flush();
+    }
+
+    fn input_pin(&mut self, pos: usize, pin: Pin) {
+        self.answers = self.answers.iter().enumerate()
+            .map(|(i, a)|
+                if i == pos {
+                    Some(pin)
+                } else if let Some(p) = a {
+                    if *p == pin { None }
+                    else { Some(*p) }
+                } else { None }).collect();
+        self.update_line();
     }
 }
 
@@ -165,10 +229,7 @@ impl<T> SelectGroup<T>
 
     fn select(&mut self, s: Option<char>) -> Option<T> {
         if self.selecting == s {
-            match self.selecting {
-                Some(key) => return self.values.iter().find_map(|v| if v.key == key { Some(v.item.clone()) } else { None } ),
-                None => return None,
-            }
+            return self.select_value();
         } else {
             if let Some(key) = s {
                 let find = self.values.iter().find_map(|v| if v.key == key { Some(v.item.clone()) } else { None } );
@@ -179,8 +240,16 @@ impl<T> SelectGroup<T>
                 return find;
             } else {
                 self.selecting = None;
+                self.update_line();
                 return None;
             }
+        }
+    }
+
+    fn select_value(&self) -> Option<T> {
+        match self.selecting {
+            Some(key) => return self.values.iter().find_map(|v| if v.key == key { Some(v.item.clone()) } else { None } ),
+            None => return None,
         }
     }
 }

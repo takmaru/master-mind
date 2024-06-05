@@ -103,7 +103,7 @@ pub fn start() -> Result<()> {
 
     let mut view = ConsoleView::new(&rule.pins.iter().sorted().collect::<Vec<&Pin>>(), rule.answer_count, rule.try_count);
     view.update()?;
-    view.wait_input()?;
+    view.wait_input(1)?;
     return Ok(());
 
     // 最大回数まで
