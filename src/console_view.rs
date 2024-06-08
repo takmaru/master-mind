@@ -15,11 +15,28 @@ impl fmt::Display for Pin {
 
 struct Position { x: u16, y: u16 }
 
+struct AnswerView {
+    answer: Vec<Option<Pin>>,
+}
+
+impl<'a> fmt::Display for AnswerView {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "|");
+        self.answer.iter()
+            .for_each(|pin|
+                match pin {
+                    Some(pin) => write!(f, " {} |", pin).unwrap(),
+                    None => write!(f, "    |").unwrap(),
+                });
+        Ok(())
+    }
+}
+
 pub struct ConsoleView {
     width: u16,
     height: u16,
+    answer_count: u32,
     try_count: u32,
-    answers: Vec<AnswerLine>,
     pinnum_group: SelectGroup<u32>,
     pins_group: SelectGroup<Pin>,
 }
@@ -32,7 +49,7 @@ impl ConsoleView {
         let keys = [ '1', '2', '3', '4', '5', '6', '7', '8', '9', '0' ];
         let pinnum_group = SelectGroup::new(
             Position { x: (width / 2) - (answer_count as u16 * 5 / 2), y: 2 + try_count as u16 + 2 },
-            keys.into_iter().zip((1..=answer_count))
+            keys.into_iter().zip(1..=answer_count)
             .map(|(key, item)| KeyItem { key, item: item.clone() })
             .collect());
 
@@ -45,16 +62,7 @@ impl ConsoleView {
 
         execute!(std::io::stdout(), terminal::EnterAlternateScreen).unwrap();
 
-        Self { width, height, try_count,
-            answers: (0..try_count).into_iter()
-                .map(|y|
-                    AnswerLine {
-                        position: Position { x: (width / 2) - (((5 * answer_count) + 1) / 2) as u16 - 1,
-                                             y: (2 + try_count - y) as u16},
-                        answers: vec![None; answer_count as usize]
-                    })
-                .collect(),
-            pinnum_group, pins_group }
+        Self { width, height, try_count, answer_count, pinnum_group, pins_group }
     }
 
     pub fn update(&self) -> crate::Result<()> {
@@ -64,12 +72,12 @@ impl ConsoleView {
             terminal::Clear(terminal::ClearType::All),
             cursor::MoveTo((self.width / 2) - 10, 1), style::Print("マスター　マインド".yellow()),
         )?;
-        for (idx, answer) in self.answers.iter().enumerate() {
+        let x = (self.width / 2) - (((5 * self.answer_count) + 1) / 2) as u16 - 1;
+        for i in 1..=self.try_count {
             queue!(stdout,
-                    cursor::MoveTo(answer.position.x - 4, answer.position.y),
-                    style::Print(format!("{:>2}: ", idx + 1)),
+                cursor::MoveTo(x - 4, 2 + i as u16),
+                style::Print(format!("{:>2}: {}", i, AnswerView { answer: vec![None; self.answer_count as usize] })),
             )?;
-            answer.update_line();
         }
         queue!(stdout,
             cursor::MoveTo(self.pinnum_group.position.x - 34, self.pinnum_group.position.y), style::Print("ピンの位置を選択してください"),
@@ -84,8 +92,11 @@ impl ConsoleView {
 
     pub fn wait_input(&mut self, try_count: u32) -> crate::Result<Vec<Option<Pin>>> {
 
-        //let mut input = vec![None; self.answers.len() as usize];
-        let answer = &mut self.answers[(try_count - 1) as usize];
+        let mut answer = AnswerWindow {
+            position: Position { x: (self.width / 2) - (((5 * self.answer_count) + 1) / 2) as u16 - 1,
+                                 y: (2 + self.try_count - (try_count - 1)) as u16},
+            answer: AnswerView { answer: vec![None; self.answer_count as usize] },
+        };
         
         self.pinnum_group.update_line();
         self.pins_group.update_line();
@@ -163,29 +174,23 @@ impl fmt::Display for KeyItem<u32> {
     }
 }
 
-struct AnswerLine {
+struct AnswerWindow {
     position: Position,
-    answers: Vec<Option<Pin>>,
+    answer: AnswerView,
 }
 
-impl AnswerLine {
+impl AnswerWindow {
 
-    fn update_line(&self) {
+    fn update(&self) {
         let mut stdout = std::io::stdout();
         queue!(stdout,
             cursor::MoveTo(self.position.x, self.position.y),
-            style::Print("|")).unwrap();
-        for answer in &self.answers {
-            match answer {
-                Some(pin) => queue!(stdout, style::Print(format!(" {} |", pin))).unwrap(),
-                None => queue!(stdout, style::Print("    |")).unwrap(),
-            }
-        };
+            style::Print(format!("{}", self.answer))).unwrap();
         stdout.flush();
     }
 
     fn input_pin(&mut self, pos: usize, pin: Pin) {
-        self.answers = self.answers.iter().enumerate()
+        self.answer.answer = self.answer.answer.iter().enumerate()
             .map(|(i, a)|
                 if i == pos {
                     Some(pin)
@@ -193,7 +198,7 @@ impl AnswerLine {
                     if *p == pin { None }
                     else { Some(*p) }
                 } else { None }).collect();
-        self.update_line();
+        self.update();
     }
 }
 
