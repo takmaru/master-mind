@@ -90,7 +90,7 @@ impl ConsoleView {
         Ok(())
     }
 
-    pub fn wait_input(&mut self, try_count: u32) -> crate::Result<Vec<Option<Pin>>> {
+    pub fn wait_input(&mut self, try_count: u32) -> crate::Result<Vec<Pin>> {
 
         let mut answer = AnswerWindow {
             position: Position { x: (self.width / 2) - (((5 * self.answer_count) + 1) / 2) as u16 - 1,
@@ -102,6 +102,17 @@ impl ConsoleView {
         self.pins_group.update_line();
 
         loop {
+            {
+                let mut stdout = std::io::stdout();
+                queue!(stdout,
+                    cursor::MoveTo(answer.position.x + (answer.answer.answer.len() * 5 + 1) as u16 + 2, answer.position.y),
+                    terminal::Clear(terminal::ClearType::UntilNewLine))?;
+                if answer.answer.answer.iter().all(|a| a.is_some()) {
+                    queue!(stdout, style::Print("決定: ENT"))?;
+                }
+                stdout.flush()?;
+            }
+
             let event = event::read()?;
             //println!("{:?}", event);
             match event {
@@ -138,6 +149,29 @@ impl ConsoleView {
                             } else {
                                 execute!(std::io::stdout(),
                                     cursor::MoveTo(4, self.height - 4), terminal::Clear(terminal::ClearType::CurrentLine), style::Print(format!("'{}' キー じゃないよ", ch)))?;
+                            }
+                        },
+                        KeyCode::Enter => {
+                            if answer.answer.answer.iter().all(|a| a.is_some()) {
+                                execute!(std::io::stdout(),
+                                    cursor::MoveTo(answer.position.x + (answer.answer.answer.len() * 5 + 1) as u16 + 2 + 9 + 2, answer.position.y),
+                                    style::Print("本当にいいですか？ (y/n)"))?;
+                                loop {
+                                    let event = event::read()?;
+                                    match event {
+                                        Event::Key(key) if key.kind == event::KeyEventKind::Release => {
+                                            match key.code {
+                                                KeyCode::Char(ch) if ch == 'y' => {
+                                                    return Ok(answer.answer.answer.iter().map(|a| a.unwrap()).collect());
+                                                },
+                                                KeyCode::Char(ch) if ch == 'n' => break,
+                                                KeyCode::Esc => break,
+                                                _ => (),
+                                            }
+                                        },
+                                        _ => (),
+                                    }
+                                }
                             }
                         },
                         _ => (),
