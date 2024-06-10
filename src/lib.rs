@@ -30,12 +30,14 @@ impl Pin {
 #[derive(Debug)]
 pub enum Error {
     AnswerNew { pins_len: usize, count:usize },   // 答えを生成できなかった
+    EndOfEscape,
 }
 
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Error::AnswerNew { pins_len, count } => write!(f, "Answer::new() error. pins.len:{}, count:{}", pins_len, count),
+            Error::EndOfEscape => write!(f, "End of Escape"),
         }
     }
 }
@@ -91,6 +93,11 @@ struct Rule {
     try_count: u32,
 }
 
+struct History {
+    pins: Vec<Pin>,
+    hints: Vec<Hint>,
+}
+
 pub fn start() -> Result<()> {
 
     // ルール
@@ -103,32 +110,21 @@ pub fn start() -> Result<()> {
 
     let mut view = ConsoleView::new(&rule.pins.iter().sorted().collect::<Vec<&Pin>>(), rule.answer_count, rule.try_count);
     view.update()?;
-    view.wait_input(1)?;
-    return Ok(());
 
     // 最大回数まで
-    let mut try_count = 1;
-    while try_count < rule.try_count {
+    let mut histories = Vec::new();
+    while histories.len() < rule.try_count as usize {
 
         // 現在の状況を表示する
         // 入力を待つ
         // 入力を判定する
-        
-        // 入力
-        let try_pins = vec![ ];
-        if let hints = answer.judge(&try_pins) {
-            // 次の入力
-        } else {
-            // 結果なし（回答のピンが足りない or 重複がある）
-            continue;
-        }
-        match answer.judge(&try_pins) {
+        let pins = view.wait_input(&histories)?;
+        match answer.judge(&pins) {
             // 結果あり
-            Some(hints) => (),
+            Some(hints) => histories.push(History { pins, hints }),
             // 結果なし（回答のピンが足りない or 重複がある）
             None => continue,
         };
-        try_count += 1;
     }
 
     Ok(())

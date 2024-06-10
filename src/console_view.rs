@@ -5,11 +5,21 @@ use crossterm::{cursor, event, execute, queue, style, terminal };
 use crossterm::event::{Event, KeyCode};
 use crossterm::style::Stylize;
 
-use crate::Pin;
+use crate::{Pin, Hint, History};
 
 impl fmt::Display for Pin {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", "▲".with(self.color))
+    }
+}
+
+impl fmt::Display for Hint {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Blow => write!(f, "□"),
+            Self::Hit => write!(f, "■"),
+            Self::None => write!(f, "  "),
+        }
     }
 }
 
@@ -21,7 +31,7 @@ struct AnswerView {
 
 impl<'a> fmt::Display for AnswerView {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "|");
+        write!(f, "|")?;
         self.answer.iter()
             .for_each(|pin|
                 match pin {
@@ -90,17 +100,22 @@ impl ConsoleView {
         Ok(())
     }
 
-    pub fn wait_input(&mut self, try_count: u32) -> crate::Result<Vec<Pin>> {
+    pub fn wait_input(&mut self, histories: &[History]) -> crate::Result<Vec<Pin>> {
+
+        let x = (self.width / 2) - (((5 * self.answer_count) + 1) / 2) as u16 - 1;
+        let y = 2 + self.try_count as u16;
+        for (i, history) in histories.iter().enumerate() {
+            view_history(x, y - i as u16, history);
+        }
 
         let mut answer = AnswerWindow {
-            position: Position { x: (self.width / 2) - (((5 * self.answer_count) + 1) / 2) as u16 - 1,
-                                 y: (2 + self.try_count - (try_count - 1)) as u16},
+            position: Position { x, y: y - histories.len() as u16 },
             answer: AnswerView { answer: vec![None; self.answer_count as usize] },
         };
         
         self.pinnum_group.update_line();
         self.pins_group.update_line();
-
+        
         loop {
             {
                 let mut stdout = std::io::stdout();
@@ -118,7 +133,7 @@ impl ConsoleView {
             match event {
                 Event::Key(key) if key.kind == event::KeyEventKind::Release => {
                     match key.code {
-                        KeyCode::Esc => break,
+                        KeyCode::Esc => return Err(Box::new(crate::Error::EndOfEscape)),
                         KeyCode::Char(ch) => {
                             if let Some(num) = self.pinnum_group.select(Some(ch)) {
                                 if let Some(pin) = self.pins_group.select_value() {
@@ -165,7 +180,7 @@ impl ConsoleView {
                                                     return Ok(answer.answer.answer.iter().map(|a| a.unwrap()).collect());
                                                 },
                                                 KeyCode::Char(ch) if ch == 'n' => break,
-                                                KeyCode::Esc => break,
+                                                KeyCode::Esc => return Err(Box::new(crate::Error::EndOfEscape)),
                                                 _ => (),
                                             }
                                         },
@@ -183,6 +198,30 @@ impl ConsoleView {
 
         Ok(Vec::new())
     }
+}
+
+struct HistoryPins<'a>(&'a Vec<Pin>);
+impl<'a> fmt::Display for HistoryPins<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "|")?;
+        self.0.iter().for_each(|pin| write!(f, " {} |", pin).unwrap());
+        Ok(())
+    }
+}
+
+struct HistoryHints<'a>(&'a Vec<Hint>);
+impl<'a> fmt::Display for HistoryHints<'a> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.iter().for_each(|hiht| write!(f, "{}", hiht).unwrap());
+        Ok(())
+    }
+}
+
+fn view_history(x: u16, y: u16, history: &History) {
+    execute!(std::io::stdout(),
+        cursor::MoveTo(x, y), terminal::Clear(terminal::ClearType::UntilNewLine),
+        style::Print(format!("{} {}", HistoryPins(&history.pins), HistoryHints(&history.hints)))
+    ).unwrap();
 }
 
 impl Drop for ConsoleView {
