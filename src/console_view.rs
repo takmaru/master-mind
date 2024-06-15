@@ -198,6 +198,52 @@ impl ConsoleView {
 
         Ok(Vec::new())
     }
+
+    pub fn win(&self, histories: &[History]) {
+        let x = (self.width / 2) - (((5 * self.answer_count) + 1) / 2) as u16 - 1;
+        let y = 2 + self.try_count as u16;
+        for (i, history) in histories.iter().enumerate() {
+            view_history(x, y - i as u16, history);
+        }
+
+        execute!(std::io::stdout(),
+            cursor::MoveTo(1, y + 1), terminal::Clear(terminal::ClearType::FromCursorDown),
+            cursor::MoveTo(self.width / 2 - 16, y + 2), style::Print("ゲーム  クリア！  おめでとう！！"),
+            cursor::MoveTo(self.width - 10, self.height - 2), style::Print("終了: ESC"),
+        ).unwrap();
+
+        loop {
+            let event = event::read().unwrap();
+            match event {
+                Event::Key(key) if key.kind == event::KeyEventKind::Release && key.code == KeyCode::Esc
+                    => return,
+                _ => (),
+            }
+        }
+    }
+
+    pub fn game_over(&self, histories: &[History]) {
+        let x = (self.width / 2) - (((5 * self.answer_count) + 1) / 2) as u16 - 1;
+        let y = 2 + self.try_count as u16;
+        for (i, history) in histories.iter().enumerate() {
+            view_history(x, y - i as u16, history);
+        }
+
+        execute!(std::io::stdout(),
+            cursor::MoveTo(1, y + 1), terminal::Clear(terminal::ClearType::FromCursorDown),
+            cursor::MoveTo(self.width / 2 - 11, y + 2), style::Print("ゲーム  オーバー  残念"),
+            cursor::MoveTo(self.width - 10, self.height - 2), style::Print("終了: ESC"),
+        ).unwrap();
+
+        loop {
+            let event = event::read().unwrap();
+            match event {
+                Event::Key(key) if key.kind == event::KeyEventKind::Release && key.code == KeyCode::Esc
+                    => return,
+                _ => (),
+            }
+        }
+    }
 }
 
 struct HistoryPins<'a>(&'a Vec<Pin>);

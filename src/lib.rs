@@ -121,11 +121,19 @@ pub fn start() -> Result<()> {
         let pins = view.wait_input(&histories)?;
         match answer.judge(&pins) {
             // 結果あり
-            Some(hints) => histories.push(History { pins, hints }),
+            Some(hints) => {
+                let is_win = hints.iter().all(|h| h == &Hint::Hit);
+                histories.push(History { pins, hints });
+                if is_win {
+                    view.win(&histories);
+                    return Ok(())
+                }
+            },
             // 結果なし（回答のピンが足りない or 重複がある）
             None => continue,
         };
     }
+    view.game_over(&histories);
 
     Ok(())
 }
